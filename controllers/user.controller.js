@@ -35,7 +35,7 @@ const createUser = async (req, res) => {
 
     let mailOptions = {
       from: process.env.NODE_MAIL,
-      bcc: [email],
+      to: email,
       subject: `Welcome, ${firstName}`,
       html: renderMail,
     };
