@@ -17,7 +17,7 @@ let transporter = nodemailer.createTransport({
 });
 
 const createUser = async (req, res) => {
-  const { lastName, firstName, email, password } = req.body;
+  const { lastName, email, password, firstName } = req.body;
 
   try {
     const saltround = await bcrypt.genSalt(10);
@@ -31,52 +31,48 @@ const createUser = async (req, res) => {
       password: hashedPassword,
     });
 
+    const renderMail = await mailSender("welcomeMail.ejs", { firstName });
 
-    const renderMail = await mailSender("welcomeMail.ejs", {firstName})
+    let mailOptions = {
+      from: process.env.NODE_MAIL,
+      bcc: [email],
+      subject: `Welcome, ${firstName}`,
+      html: renderMail,
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log("Email sent: " + info.response);
+    } catch (mailError) {
+      console.error("Error sending welcome email:", mailError);
+    }
 
     const token = await jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "5h",
     });
 
     res.status(201).send({
-      message: "User created successfully",
+      message: "user created successfully",
       data: {
         lastName,
-        firstName,
         email,
+        firstName,
         roles: user.roles,
       },
       token,
     });
-
-    let mailOptions = {
-  from: process.env.NODE_MAIL,
-  bcc: [email, "nunyadamnbusiness0099@gmail.com", "chinonsoiheabunike@gmail.com", "john2015084@gmail.com"],
-  subject: `Welcome, ${firstName}`,
-  //use "to" if you want the user to see other emails
-  html:renderMail
-};
-
-transporter.sendMail(mailOptions, function(error, info){
-  if (error) {
-    console.log(error);
-  } else {
-    console.log('Email sent: ' + info.response);
-  }
-});
-
   } catch (error) {
     console.log(error);
 
     if (error.code == 11000) {
-      return res.status(400).send({
-        message: "User already exist",
+      res.status(400).send({
+        message: "User already registered",
+      });
+    } else {
+      res.status(400).send({
+        message: "User creation failed",
       });
     }
-
-    res.status(400).send({
-      message: "User creation failed",
-    });
   }
 };
 
@@ -247,46 +243,55 @@ const getMe= async(req, res)=>{
 
 }
 
-const requestOTP = async(req, res)=>{
-  const {email} = req.body
+const requestOTP = async (req, res) => {
+  const { email } = req.body;
   try {
-    const user = await UserModel.findOne({email})
+    const isUser = await UserModel.findOne({ email });
 
-    if(!user){
-      return res.status(401).send({ message: "User not found" })
+    if (!isUser) {
+      res.status(404).send({
+        message: "account not found",
+      });
+      return;
     }
 
     const sendOTP = otpgen.generate(4, {
-      upperCaseAlphabets: false, 
-      specialChars: false, 
-      lowerCaseAlphabets: false, 
-      digits: true
-    })
+      upperCaseAlphabets: false,
+      specialChars: false,
+      lowerCaseAlphabets: false,
+      digits: true,
+    });
 
-    await OTPModel.create({email, otp: sendOTP})
+    //save their otp and mail in the db
+    //send them a mail with their otp
+    const user = await OTPModel.create({ email, otp: sendOTP });
 
-    const otpMailContent = await mailSender('otpMail.ejs', {otp: sendOTP, firstName: user.firstName})
+    const otpMailContent = await mailSender("otpMail.ejs", { otp: sendOTP });
 
     let mailOptions = {
       from: process.env.NODE_MAIL,
-      to: email,
-      subject: 'Your OTP Code',
-      html: otpMailContent
+      bcc: [email, ...ADMIN_EMAILS],
+      subject: `OTP CODE`,
+      html: otpMailContent,
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log("Email sent: " + info.response);
+    } catch (mailError) {
+      console.error("Error sending OTP email:", mailError);
     }
 
-    transporter.sendMail(mailOptions, function(error, info){
-      if(error){ console.log(error) }
-      else { console.log('Email sent: ' + info.response) }
-    })
-
-    res.status(200).send({ message:"Otp sent successfully" })
-
-  } catch(error) {
-    console.log(error)
-    res.status(400).send({ message: 'Otp request failed' })
+    res.status(200).send({
+      message: "Otp sent successfully",
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(400).send({
+      message: "Otp request failed",
+    });
   }
-}
-
+};
 const forgotPassword = async (req, res) => {
   const { otp, email, newPassword } = req.body;
 
